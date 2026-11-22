@@ -20,8 +20,21 @@ def load_data(red_path: str, white_path: str) -> pd.DataFrame:
 
     Note: Don't forget to add the 'type' characteristic
     """
-    # TODO: your code
-    data = None
+    red_df = pd.read_csv(red_path, sep=None, engine='python')
+    white_df = pd.read_csv(white_path, sep=None, engine='python')
+
+    red_df.columns = red_df.columns.str.strip()
+    white_df.columns = white_df.columns.str.strip()
+
+    red_df['type'] = 'white' if (
+        'white' in red_path.lower() and 'red' not in red_path.lower()
+    ) else 'red'
+    white_df['type'] = 'red' if (
+        'red' in white_path.lower() and 'white' not in white_path.lower()
+    ) else 'white'
+
+    data = pd.concat([red_df, white_df], ignore_index=True)
+    data = data.dropna().reset_index(drop=True)
 
     return data
 
@@ -30,7 +43,17 @@ def remove_outliers(df: pd.DataFrame, features: pd.Index) -> pd.DataFrame:
     """Removing outliers from the dataset using the IQR method."""
     df_clean = df.copy()
 
-    # TODO: your code
+    mask = pd.Series(True, index=df_clean.index)
+    for feature in features:
+        q1 = df_clean[feature].quantile(0.25)
+        q3 = df_clean[feature].quantile(0.75)
+        iqr = q3 - q1
+        lower_bound = q1 - 1.5 * iqr
+        upper_bound = q3 + 1.5 * iqr
+        mask &= (df_clean[feature] >= lower_bound) & (
+            df_clean[feature] <= upper_bound)
+
+    df_clean = df_clean[mask].reset_index(drop=True)
 
     return df_clean
 
@@ -40,9 +63,9 @@ def scale_features(
     X_test: pd.DataFrame
 ) -> tuple[np.ndarray, np.ndarray]:
     """Standardization of features."""
-    # TODO: your code
-    X_train_scaled = None
-    X_test_scaled = None
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
 
     return X_train_scaled, X_test_scaled
 
@@ -55,7 +78,9 @@ def encode_categorical_variables(data: pd.DataFrame) -> pd.DataFrame:
     """
     data_encoded = data.copy()
 
-    # TODO: your code
+    if 'type' in data_encoded.columns:
+        le = LabelEncoder()
+        data_encoded['type'] = le.fit_transform(data_encoded['type'])
 
     return data_encoded
 
@@ -63,10 +88,8 @@ def encode_categorical_variables(data: pd.DataFrame) -> pd.DataFrame:
 def prepare_regression_data(
         data: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
     """Preparing data for the regression task."""
-    # TODO: your code
-
-    X = None
-    y = None
+    X = data.drop(columns=['quality', 'type'])
+    y = data['quality']
 
     return X, y
 
@@ -77,9 +100,20 @@ def build_regression_model(input_dim: int) -> keras.Model:
     
     Use `keras.layers.Input` and `keras.layers.Dense`.
     """
-    model = keras.Sequential()
+    model = keras.Sequential([
+        keras.layers.Input(shape=(input_dim,)),
+        keras.layers.Dense(input_dim, activation='relu'),
+        keras.layers.Dense(64, activation='relu'),
+        keras.layers.Dense(32, activation='relu'),
+        keras.layers.Dense(16, activation='relu'),
+        keras.layers.Dense(1)
+    ])
 
-    # TODO: your code
+    model.compile(
+        loss='mean_squared_error',
+        optimizer='adam',
+        metrics=['mse']
+    )
 
     return model
 
@@ -90,9 +124,14 @@ def train_regression_model(model: keras.Model,
                            epochs: int = 50,
                            batch_size: int = 32) -> keras.callbacks.History:
     """Training the neural network regressor."""
-    # TODO: your code
-
-    history = None
+    history = model.fit(
+        X_train,
+        y_train,
+        epochs=epochs,
+        batch_size=batch_size,
+        validation_split=0.2,
+        verbose=1
+    )
 
     return history
 
@@ -101,27 +140,38 @@ def evaluate_regression_model(
         model: keras.Model, X_test: pd.DataFrame,
         y_test: pd.Series) -> dict[str, float | np.ndarray]:
     """Evaluating the neural network regressor."""
-    # TODO: your code
+    y_pred = model.predict(X_test).flatten()
 
     # Model evaluation
-    results = {'MSE': 0.0, 'R2': 0.0}
+    results = {
+        'MSE': float(mean_squared_error(y_test, y_pred)),
+        'R2': float(r2_score(y_test, y_pred))
+    }
 
     return results
 
 
 def prepare_classification_data(
-        data: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+        data: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray]:
     """
     Preparing data for the classification task.
     
     Use keras.utils.to_categorical to convert labels
     into a one-hot encoded vector.
     """
-    # Categorization of quality ratings
-    # TODO: your code
+    df = data.copy()
 
-    X = None
-    y = None
+    # Categorization of quality ratings
+    df['quality_category'] = pd.cut(
+        df['quality'],
+        bins=[-1, 5, 7, 10],
+        labels=['Low', 'Medium', 'High']
+    )
+    label_mapping = {'Low': 0, 'Medium': 1, 'High': 2}
+    numeric_labels = df['quality_category'].map(label_mapping).astype(int)
+
+    X = df.drop(columns=['quality', 'type', 'quality_category'])
+    y = keras.utils.to_categorical(numeric_labels, num_classes=3)
 
     return X, y
 
@@ -133,9 +183,20 @@ def build_classification_model(input_dim: int,
     
     Use `keras.layers.Input` and `keras.layers.Dense`.
     """
-    model = keras.Sequential()
+    model = keras.Sequential([
+        keras.layers.Input(shape=(input_dim,)),
+        keras.layers.Dense(input_dim, activation='relu'),
+        keras.layers.Dense(64, activation='relu'),
+        keras.layers.Dense(32, activation='relu'),
+        keras.layers.Dense(16, activation='relu'),
+        keras.layers.Dense(num_classes, activation='softmax')
+    ])
 
-    # TODO: your code
+    model.compile(
+        loss='categorical_crossentropy',
+        optimizer='adam',
+        metrics=['accuracy']
+    )
 
     return model
 
@@ -146,9 +207,14 @@ def train_classification_model(model,
                                epochs=50,
                                batch_size=32) -> keras.callbacks.History:
     """Training the neural network classifier."""
-    # TODO: your code
-
-    history = None
+    history = model.fit(
+        X_train,
+        y_train,
+        epochs=epochs,
+        batch_size=batch_size,
+        validation_split=0.2,
+        verbose=1
+    )
 
     return history
 
@@ -157,16 +223,21 @@ def evaluate_classification_model(
         model: keras.Model, X_test: pd.DataFrame,
         y_test: pd.Series) -> dict[str, float | str | dict]:
     """Evaluating the neural network classifier."""
-    # TODO: your code
+    y_pred_probs = model.predict(X_test)
+    y_pred = np.argmax(y_pred_probs, axis=1)
+    y_true = np.argmax(y_test, axis=1) if np.ndim(y_test) > 1 else np.asarray(y_test)
 
     # Model evaluation
-    results = {'report': "", 'accuracy': 0.0}
+    results = {
+        'report': classification_report(y_true, y_pred, zero_division=0),
+        'accuracy': float(accuracy_score(y_true, y_pred))
+    }
     return results
 
 
 def main():
     # Loading data
-    data = load_data('winequality-red.csv', 'winequality-white.csv')
+    data = load_data('../winequality-red.csv', '../winequality-white.csv')
 
     # Removing outliers
     features = data.columns[:-2]  # Without 'quality' and 'type'

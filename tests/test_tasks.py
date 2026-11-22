@@ -14,7 +14,7 @@ from tasks import (load_data, remove_outliers, scale_features,
 
 @pytest.fixture(scope="module")
 def data() -> pd.DataFrame:
-    return load_data('winequality-red.csv', 'winequality-white.csv')
+    return load_data('../winequality-red.csv', '../winequality-white.csv')
 
 
 @pytest.fixture(scope="module")
